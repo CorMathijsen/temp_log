@@ -9,92 +9,33 @@
 #
 #   Improvements:
 #   For temp graph curve split grid and graph over two turtles, no redraw of grid required.
-#   Add PIR sensor to enable LED flashing only when person is around. 
+#   Add PIR sensor to enable LED flashing only when person is around
 #   Considered code profiling as Pi zero runs on 90 - 100% CPU
 #
 import time
 import datetime
-import glob
-import sys
 import turtle
-from threading import Thread, Event
-
-import RPi.GPIO as GPIO
-
-BASE_DIR = '/sys/bus/w1/devices/'
-try:
-    device_folder = glob.glob(BASE_DIR + '28*')[0]
-except IndexError:                                      # No folder 28-xxxxx found, no sensor found
-    print ("DS18B20 sensor not found")
-    print ("Program stopped")
-    sys.exit(1)                                         # Force script end with return code 1
-device_file = device_folder + '/w1_slave'
-
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(18, GPIO.OUT)
-GPIO.output(18, GPIO.LOW)
-GPIO.setup(14, GPIO.OUT)
-GPIO.output(14, GPIO.LOW)
+import math
 
 scr = turtle.Turtle()
 txt = turtle.Turtle()
 
+scr.screen.bgcolor('Light Blue')
 scr.screen.screensize (1200, 700)
 scr.screen.setup(width=1.0, height=1.0, startx=None, starty=None)
 scr.hideturtle()
 scr.penup()
-scr.speed(0)                                            # Set turtle to max speed.
+scr.speed(0)                                           # Set turtle to max speed.
 scr.screen.tracer(0)
 txt.screen.tracer(0)
 txt.hideturtle()
 
-def flash_led(event):
+def read_temp(x):
     """
-        Flash led twice using Pi GPIO pins 14 and 18
+        Simulate temperature curve
     """
-    t = 0
-    while True:
-        time_str = datetime.datetime.now().strftime ("%H%M%S")   # Extract seconds from time string
-        sec = time_str[4:6]
-        if int(sec) == t:
-            t +=3
-            GPIO.output(18, GPIO.HIGH)
-            time.sleep(0.08)
-            GPIO.output(18, GPIO.LOW)
-            time.sleep(0.05)
-            GPIO.output(14, GPIO.HIGH)
-            time.sleep(0.08)
-            GPIO.output(14, GPIO.LOW)
-            time.sleep(0.05)
-        if t >= 60:
-            t=0
-        if event.is_set():
-            print('The thread was stopped prematurely.')
-            break
-
-def read_temp_raw():
-    """
-        Read file from Temp sensor
-    """
-    try:
-        with open (device_file, 'r') as f:                  # For improved file handling
-            lines = f.readlines()
-        return lines
-    except FileNotFoundError:
-        print ("No Sensor found.")
-def read_temp():
-    """
-        Extract temperature from Temp sensor file
-    """
-    lines = read_temp_raw()
-    while lines[0].strip()[-3:] != 'YES':
-        time.sleep(0.2)
-        lines = read_temp_raw()
-    equals_pos = lines[1].find('t=')
-    if equals_pos != -1:
-        temp_string = lines[1][equals_pos+2:]
-        temp_c = float(temp_string) / 1000.0
-        return temp_c
+    temp = round(20 + 2*math.sin(x*math.pi/1000), 2)
+    return temp
 
 def scr_layout():
     """
@@ -136,7 +77,7 @@ def scr_dot(x, temp):
     scr.penup()
     scr.goto (x, y)
     scr.pendown()
-    scr.dot(2, 'Blue')
+    scr.dot(4, 'Blue')
     scr.penup()
     scr.screen.update()
 
@@ -152,20 +93,24 @@ def fixed_text():
     txt.write("Low temp    :", font=("Arial", 14, 'normal'))
     txt.goto (-480, -100)
     txt.write("Actual temp :", font=("Arial", 14, "normal"))
+    txt.goto (100, -100)
+    txt.write("Up time      :", font=("Arial", 14, "normal"))
 
 
-def txt_values(high, low, act):
+def txt_values(high, low, act, up):
     """
         Print actual values that go along the fixed text.
     """
     txt.hideturtle()
     txt.penup()
     txt.goto (-120, -100)                                  # Print actual values
-    txt.write(high, font=("Arial", 12, "normal"))
+    txt.write(high, font=("Arial", 14, "normal"))
     txt.goto (-120, -130)
-    txt.write(low, font=('Arial', 12, 'normal'))
+    txt.write(low, font=('Arial', 14, 'normal'))
     txt.goto (-360, -100)
-    txt.write(act, font=('Arial', 12, 'normal'))
+    txt.write(act, font=('Arial', 14, 'normal'))
+    txt.goto (210, -100)
+    txt.write(up, 14, font=("Arial", 14, "normal"))
     txt.screen.update()
 
 def main():
@@ -173,47 +118,42 @@ def main():
         Loop indefinite temp reading and led flashing
     """
     buf_cnt=0
-    event = Event()
     scr_layout()
     fixed_text()                                            # Print fixed text on screen
-    t1 = Thread(target=flash_led, args=(event,), daemon=True)
-    t1.start()
-    print ('Led flash daemon started')
     timestr = datetime.datetime.now().strftime ("%H%M%S")   # Extract seconds from time string
-    time_hrs = timestr[0:2]
-    time_min = timestr[2:4]
     time_sec = timestr[4:6]
     count = 0
     time_t = 0
     temp_high = 0.00
     temp_low = 40.00
     temp = 0.00
+    up_hrs=0
+    up_min=0
     starttime = timestr
     start_time=time.perf_counter()
     print ("Temperature script started at:", starttime, time_t)
     try:
         while True:
             if int(time_sec) == time_t:
-                temp = read_temp()
-#                print(timestr, time_t, temp, count, buf_cnt)
-                if int(temp*1000) > int(temp_high*1000):
-                    temp_high = temp
-                if int(temp*1000) < int(temp_low*1000):
-                    temp_low = temp
+                temp = read_temp(count)
+                if int(temp) > int(temp_high):
+                    temp_high = round(temp,2)
+                if int(temp) < int(temp_low):
+                    temp_low = round(temp,2)
                 txt.clear()                                             # Clear text screen
                 fixed_text()                                            # Update with fixed text
-                txt_values(temp_high, temp_low, temp)                   # Update with variable data
-                time_t +=3
+                txt_values(temp_high, temp_low, temp, str(up_hrs)+":"+str(up_min))
+                time_t +=3                                              # Interval for updates
                 count +=1
                 buf_cnt+=1
                 if time_t >= 60:
                     time_t=0
                     end_time=time.perf_counter()
                     run_time = end_time - start_time
-                    time_hrs = int (run_time/ 3600)
-                    time_min = int ((run_time - (time_hrs*3600))/60)
+                    up_hrs = int (run_time/ 3600)
+                    up_min = int ((run_time - (up_hrs*3600))/60)
                     print ('Run statitics:')
-                    print ("Up time is:", time_hrs,":",time_min)
+                    print ("Up time is:", up_hrs,":",up_min)
                     print ("High temp :", temp_high)
                     print ("Low temp:", temp_low)
                 if buf_cnt>=30:
@@ -226,19 +166,12 @@ def main():
                     if x== -480:                                   # Re-draw screen at 00:00 hrs
                         scr.clear()
                         scr_layout()
-                        scr.update()
+                        scr.screen.update()
                     scr_dot(x, y)
             timestr = datetime.datetime.now().strftime ("%H%M%S")
             time_sec = timestr[4:6]
-
-
     except KeyboardInterrupt:                                       # Capture <CTRL> + c to stop
-        event.set()                                                 # Stop daemon
-        print ("Thread event set")
-        t1.join()                                                   # Wait for daemon to stop
-        print ("Program ended by keyboard interrupt")
-        GPIO.cleanup()
-
+        print ("Program stopped by keyboard")
 
 if __name__ == '__main__':
     main()
