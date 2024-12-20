@@ -1,15 +1,14 @@
 """
     Simulation of temperature curve for testing purpose.
 """
-#   Flash two leds using PI GPIO pin 14 and 18 as output.
-#   Read DS18B20 temperature sensor data
 #   Includes error handling for sensor not found and keyboard interrupt to stop program
+#   Fixed data, varable data and graph data are split over three different turtles.
 #
-#   Improvements:
-#   For temp graph curve split grid and graph over two turtles, no redraw of grid required.
-#   Add PIR sensor to enable LED flashing only when person is around
-#   Considered code profiling as Pi zero runs on 90 - 100% CPU
-#
+#   Improvement:
+#      1    Create buffer that holds the collected data
+#      2    Use buffered data to delete previuou data points which enabled a rolling graph
+#           which allows to see histiory data which is not apossible now as graph is deleted
+#           at 00:00 hours,
 import time
 import datetime
 import turtle
